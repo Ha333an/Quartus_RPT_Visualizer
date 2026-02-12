@@ -2,7 +2,8 @@
   "name": "quartus-rpt-visualizer",
   "displayName": "Quartus RPT Visualizer",
   "description": "Visualize Intel Quartus .rpt report files inside VS Code.",
-  "version": "1.0.0",
+  "icon": "logo.png",
+  "version": "1.0.2",
   "publisher": "HassanEbrahimi",
   "repository": {
     "type": "git",

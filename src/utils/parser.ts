@@ -28,6 +28,91 @@ export const parseRptFile = (content: string): ReportData => {
     return line.replace(/;/g, '').trim();
   };
 
+  const createReportLine = (index: number, line: string): ReportLine => ({
+    id: `line-${index}`,
+    type: identifyMessageType(line),
+    content: line,
+    raw: line
+  });
+
+  const isTopLevelMessageLine = (line: string): boolean => {
+    if (!line.trim() || /^\s/.test(line)) {
+      return false;
+    }
+
+    return /^(Info|Warning|Critical Warning|Error)\s*\(\d+\):/i.test(line.trim());
+  };
+
+  const createFallbackTitle = (line: string, sectionIndex: number): string => {
+    const trimmed = line.trim();
+    const messageMatch = trimmed.match(/^(Critical Warning|Warning|Error|Info)\s*\(\d+\)/i);
+    const baseTitle = messageMatch ? messageMatch[0] : `Message ${sectionIndex + 1}`;
+    const ruleMatch = trimmed.match(/Rule\s+([A-Za-z0-9_-]+)/i);
+
+    if (ruleMatch) {
+      return `${baseTitle} - Rule ${ruleMatch[1]}`;
+    }
+
+    return baseTitle;
+  };
+
+  const parseFallbackSections = (): { headerInfo: string[]; sections: ReportSection[] } => {
+    const fallbackHeaderInfo: string[] = [];
+    const fallbackSections: ReportSection[] = [];
+    let activeSection: ReportSection | null = null;
+
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+
+      if (isTopLevelMessageLine(line)) {
+        if (activeSection) {
+          fallbackSections.push(activeSection);
+        }
+
+        const title = createFallbackTitle(line, fallbackSections.length);
+        activeSection = {
+          id: `section-${fallbackSections.length}-${title.replace(/[^\w\s]/g, '').replace(/\s+/g, '-').toLowerCase()}`,
+          title,
+          lines: [createReportLine(index, line)],
+          isTableOfContents: false
+        };
+
+        continue;
+      }
+
+      if (activeSection) {
+        activeSection.lines.push(createReportLine(index, line));
+      } else if (line.trim()) {
+        fallbackHeaderInfo.push(line);
+      }
+    }
+
+    if (activeSection) {
+      fallbackSections.push(activeSection);
+    }
+
+    if (fallbackSections.length === 0) {
+      const allNonEmptyLines = lines
+        .map((line, index) => ({ line, index }))
+        .filter(item => item.line.trim().length > 0)
+        .map(item => createReportLine(item.index, item.line));
+
+      if (allNonEmptyLines.length > 0) {
+        fallbackSections.push({
+          id: 'section-0-report',
+          title: 'Report',
+          lines: allNonEmptyLines,
+          isTableOfContents: false
+        });
+      }
+    }
+
+    return {
+      headerInfo: fallbackHeaderInfo,
+      sections: fallbackSections
+    };
+  };
+
   while (lineIndex < lines.length) {
     const line = lines[lineIndex];
     const prevLine = lineIndex > 0 ? lines[lineIndex - 1] : "";
@@ -71,13 +156,7 @@ export const parseRptFile = (content: string): ReportData => {
       }
     } else {
       // Add line to the current active section
-      const type = identifyMessageType(line);
-      currentSection.lines.push({
-        id: `line-${lineIndex}`,
-        type,
-        content: line,
-        raw: line
-      });
+      currentSection.lines.push(createReportLine(lineIndex, line));
     }
 
     lineIndex++;
@@ -86,6 +165,10 @@ export const parseRptFile = (content: string): ReportData => {
   // Final section push
   if (currentSection) {
     sections.push(currentSection);
+  }
+
+  if (sections.length === 0) {
+    return parseFallbackSections();
   }
 
   return {

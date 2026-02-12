@@ -19,7 +19,7 @@
     "vscode:prepublish": "npm run compile",
     "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true }); require('fs').rmSync('dist', { recursive: true, force: true });\"",
     "compile": "npm run clean && npm run bundle && tsc -p ./",
-    "bundle": "esbuild index.tsx --bundle --outfile=dist/bundle.js --format=esm --minify",
+    "bundle": "esbuild src/index.tsx --bundle --outfile=dist/bundle.js --format=esm --minify",
     "watch": "tsc -watch -p ./",
     "package": "vsce package",
     "start": "npm run bundle && serve -l 3000",

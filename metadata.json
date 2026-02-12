@@ -1,0 +1,5 @@
+{
+  "name": "Quartus RPT Visualizer",
+  "description": "A professional tool for parsing and visualizing Intel Quartus Prime .rpt files, featuring section navigation, message filtering (Info, Warning, Error), and a clean interactive interface.",
+  "requestFramePermissions": []
+}

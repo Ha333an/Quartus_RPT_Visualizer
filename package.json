@@ -1,0 +1,56 @@
+{
+  "name": "quartus-rpt-visualizer",
+  "displayName": "Quartus RPT Visualizer",
+  "description": "Visualize Intel Quartus .rpt report files inside VS Code.",
+  "version": "1.0.0",
+  "publisher": "HassanEbrahimi",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Ha333an/Quartus_RPT_Visualizer.git"
+  },
+  "engines": {
+    "vscode": "^1.75.0"
+  },
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "onCustomEditor:quartusRptViz.view"
+  ],
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "clean": "node -e \"require('fs').rmSync('out', { recursive: true, force: true }); require('fs').rmSync('dist', { recursive: true, force: true });\"",
+    "compile": "npm run clean && npm run bundle && tsc -p ./",
+    "bundle": "esbuild index.tsx --bundle --outfile=dist/bundle.js --format=esm --minify",
+    "watch": "tsc -watch -p ./",
+    "package": "vsce package",
+    "start": "npm run bundle && serve -l 3000",
+    "dev": "npm run bundle && serve -l 3000 --no-clipboard"
+  },
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "quartusRptViz.view",
+        "displayName": "Quartus RPT Report",
+        "selector": [
+          {
+            "filenamePattern": "*.rpt"
+          }
+        ],
+        "priority": "default"
+      }
+    ]
+  },
+  "dependencies": {
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^22.14.0",
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@types/vscode": "^1.75.0",
+    "@vscode/vsce": "^2.18.0",
+    "esbuild": "^0.25.10",
+    "serve": "^14.2.5",
+    "typescript": "~5.8.2"
+  }
+}

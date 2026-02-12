@@ -1,0 +1,16 @@
+.gitignore
+.env.local
+node_modules/**
+out/**/*.map
+src/**
+components/**
+utils/**
+App.tsx
+index.tsx
+index.html
+tsconfig.json
+vite.config.ts
+metadata.json
+package-lock.json
+**/*.ts
+**/*.tsx

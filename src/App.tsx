@@ -418,7 +418,7 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-4 pb-60">
+            <div className="space-y-4">
               {reportData.sections.map((section) => (
                 <div key={section.id} id={section.id} className="scroll-mt-64">
                   <ReportSectionItem 
@@ -436,24 +436,6 @@ const App: React.FC = () => {
           </div>
         )}
       </main>
-
-      {reportData && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 bg-slate-900 text-white px-8 py-4 rounded-full shadow-2xl flex items-center gap-8 border border-white/10 animate-in slide-in-from-bottom-8">
-          <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-            <span className="text-[10px] font-black uppercase tracking-widest opacity-80">
-              {vscode ? 'Extension Active' : 'Live Session'}
-            </span>
-          </div>
-          <div className="h-4 w-px bg-white/20" />
-          <div className="text-[10px] font-bold flex gap-6">
-            <span className="text-red-400">{messageCounts.error} E</span>
-            <span className="text-orange-400">{messageCounts.critical} C</span>
-            <span className="text-amber-400">{messageCounts.warn} W</span>
-            <span className="text-blue-400">{messageCounts.info} I</span>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

@@ -16,8 +16,17 @@ const vscode = (window as any).vscode;
 
 const App: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [isBackendProcessing, setIsBackendProcessing] = useState(Boolean(vscode));
   const [searchQuery, setSearchQuery] = useState('');
+  const [rawSearchQuery, setRawSearchQuery] = useState('');
   const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setSearchQuery(rawSearchQuery);
+    }, 250); // 250ms delay
+    return () => clearTimeout(timer);
+  }, [rawSearchQuery]);
   const [globalExpanded, setGlobalExpanded] = useState<boolean | undefined>(false);
   const [targetExpandId, setTargetExpandId] = useState<string | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -29,12 +38,16 @@ const App: React.FC = () => {
     const handleMessage = (event: MessageEvent) => {
       const message = event.data;
       switch (message.command) {
+        case 'processing':
+          setIsBackendProcessing(Boolean(message.active));
+          break;
         case 'setData':
           const parsed = parseRptFile(message.data);
           setReportData(parsed);
+          if (!vscode) setIsBackendProcessing(false);
           break;
         case 'setSearch':
-          setSearchQuery(message.text || '');
+          setRawSearchQuery(message.text || '');
           break;
       }
     };
@@ -62,14 +75,19 @@ const App: React.FC = () => {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
+      setIsBackendProcessing(true);
       const reader = new FileReader();
       reader.onload = (e) => {
         const text = e.target?.result as string;
         const parsed = parseRptFile(text);
         setReportData(parsed);
         setGlobalExpanded(false);
-        setSearchQuery('');
+        setRawSearchQuery('');
         setTargetExpandId(null);
+        setIsBackendProcessing(false);
+      };
+      reader.onerror = () => {
+        setIsBackendProcessing(false);
       };
       reader.readAsText(file);
     }
@@ -83,12 +101,12 @@ const App: React.FC = () => {
       case MessageType.WARNING: query = 'Warning ('; break;
       case MessageType.INFO: query = 'Info ('; break;
     }
-    setSearchQuery(query);
+    setRawSearchQuery(query);
     setGlobalExpanded(undefined);
   };
 
   const clearFilters = () => {
-    setSearchQuery('');
+    setRawSearchQuery('');
     setGlobalExpanded(undefined);
     setIsContextMode(false);
   };
@@ -107,8 +125,91 @@ const App: React.FC = () => {
     return counts;
   }, [reportData]);
 
+  const escapeRegExp = (text: string) => {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  };
+
+  const totalMatches = useMemo(() => {
+    if (!searchQuery || !reportData) return 0;
+    let count = 0;
+    const regex = new RegExp(escapeRegExp(searchQuery), 'gi');
+    for (const section of reportData.sections) {
+      for (const line of section.lines) {
+        const matches = line.content.match(regex);
+        if (matches) {
+          count += matches.length;
+        }
+        if (count > 1000) return 1001; // Cap to indicate "more than 1000"
+      }
+    }
+    return count;
+  }, [reportData, searchQuery]);
+
+  const allMatches = useMemo(() => {
+    if (!searchQuery || !reportData || totalMatches > 1000) return [];
+    
+    const matches = [];
+    const regex = new RegExp(escapeRegExp(searchQuery), 'gi');
+
+    for (const section of reportData.sections) {
+        for (const line of section.lines) {
+            for (const match of line.content.matchAll(regex)) {
+                matches.push({
+                    sectionId: section.id,
+                    lineId: line.id,
+                    start: match.index,
+                });
+            }
+        }
+    }
+    return matches;
+  }, [reportData, searchQuery, totalMatches]);
+
+  const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
+  const currentMatch = allMatches[currentMatchIndex];
+
+  const goToNextMatch = () => {
+    if (allMatches.length === 0) return;
+    setCurrentMatchIndex(i => (i + 1) % allMatches.length);
+  };
+
+  const goToPrevMatch = () => {
+    if (allMatches.length === 0) return;
+    setCurrentMatchIndex(i => (i - 1 + allMatches.length) % allMatches.length);
+  };
+
+  useEffect(() => {
+    if (currentMatch) {
+      setTargetExpandId(currentMatch.sectionId);
+
+      let attempts = 0;
+      const maxAttempts = 8;
+
+      const tryScrollToMatch = () => {
+        const el = document.getElementById(`line-${currentMatch.lineId}`);
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          return;
+        }
+
+        attempts += 1;
+        if (attempts < maxAttempts) {
+          setTimeout(tryScrollToMatch, 80);
+          return;
+        }
+
+        const sectionEl = document.getElementById(currentMatch.sectionId);
+        if (sectionEl) {
+          sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      };
+
+      setTimeout(tryScrollToMatch, 60);
+    }
+  }, [currentMatch]);
+
   const jumpToSection = (sectionId: string) => {
-    setSearchQuery(''); 
+    setRawSearchQuery(''); 
     setGlobalExpanded(undefined);
     setTargetExpandId(sectionId);
     setIsMenuOpen(false);
@@ -159,6 +260,12 @@ const App: React.FC = () => {
       {reportData && (
         <div className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm">
           <div className="max-w-[98%] mx-auto px-4 py-4 space-y-4">
+            {isBackendProcessing && (
+              <div className="inline-flex items-center gap-2 px-3 py-2 rounded-xl border border-blue-200 bg-blue-50 text-blue-700">
+                <span className="w-3 h-3 rounded-full border-2 border-blue-300 border-t-blue-600 animate-spin" />
+                <span className="text-[10px] font-black uppercase tracking-widest">Backend Processing...</span>
+              </div>
+            )}
             <div className="flex flex-col md:flex-row gap-3">
               <div className="relative flex-grow group">
                 <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
@@ -167,12 +274,12 @@ const App: React.FC = () => {
                 <input
                   type="text"
                   placeholder="Search design results..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
+                  value={rawSearchQuery}
+                  onChange={(e) => setRawSearchQuery(e.target.value)}
                   className="w-full pl-11 pr-10 py-3.5 bg-slate-100 border-transparent border-2 focus:bg-white focus:border-blue-500 rounded-2xl outline-none text-slate-900 font-bold transition-all"
                 />
-                {searchQuery && (
-                  <button onClick={() => setSearchQuery('')} className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-red-500 transition-colors">
+                {rawSearchQuery && (
+                  <button onClick={() => setRawSearchQuery('')} className="absolute inset-y-0 right-0 pr-4 flex items-center text-slate-400 hover:text-red-500 transition-colors">
                     <XCircle className="w-5 h-5" />
                   </button>
                 )}
@@ -205,28 +312,44 @@ const App: React.FC = () => {
 
             <div className="flex flex-wrap items-center justify-between gap-4">
               <div className="flex flex-wrap items-center gap-2">
-                <QuickSearchButton label="Errors" count={messageCounts.error} active={searchQuery === 'Error ('} onClick={() => handleQuickSearch(MessageType.ERROR)} color="red" />
-                <QuickSearchButton label="Critical Warnings" count={messageCounts.critical} active={searchQuery === 'Critical Warning ('} onClick={() => handleQuickSearch(MessageType.CRITICAL_WARNING)} color="orange" />
-                <QuickSearchButton label="Warnings" count={messageCounts.warn} active={searchQuery === 'Warning ('} onClick={() => handleQuickSearch(MessageType.WARNING)} color="yellow" />
-                <QuickSearchButton label="Info" count={messageCounts.info} active={searchQuery === 'Info ('} onClick={() => handleQuickSearch(MessageType.INFO)} color="blue" />
+                <QuickSearchButton label="Errors" count={messageCounts.error} active={rawSearchQuery === 'Error ('} onClick={() => handleQuickSearch(MessageType.ERROR)} color="red" />
+                <QuickSearchButton label="Critical Warnings" count={messageCounts.critical} active={rawSearchQuery === 'Critical Warning ('} onClick={() => handleQuickSearch(MessageType.CRITICAL_WARNING)} color="orange" />
+                <QuickSearchButton label="Warnings" count={messageCounts.warn} active={rawSearchQuery === 'Warning ('} onClick={() => handleQuickSearch(MessageType.WARNING)} color="yellow" />
+                <QuickSearchButton label="Info" count={messageCounts.info} active={rawSearchQuery === 'Info ('} onClick={() => handleQuickSearch(MessageType.INFO)} color="blue" />
                 
                 <div className="w-px h-6 bg-slate-200 mx-1" />
                 
                 <button
                   onClick={clearFilters}
-                  className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 ${!searchQuery ? 'opacity-40 cursor-not-allowed' : ''}`}
-                  disabled={!searchQuery}
+                  className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 border-slate-200 text-slate-500 hover:bg-slate-50 hover:border-slate-300 ${!rawSearchQuery ? 'opacity-40 cursor-not-allowed' : ''}`}
+                  disabled={!rawSearchQuery}
                 >
                   Clear Filters
                 </button>
 
                 {searchQuery && (
-                  <button
-                    onClick={() => setIsContextMode(!isContextMode)}
-                    className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 shadow-sm ${isContextMode ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-100 text-indigo-600 hover:bg-indigo-50'}`}
-                  >
-                    {isContextMode ? 'Hide Rest' : 'Show Rest'}
-                  </button>
+                  <>
+                    <div className="flex items-center gap-3 border-2 border-slate-200 rounded-xl px-3 py-2">
+                      <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
+                        {totalMatches > 1000 ? '>1k' : totalMatches}
+                        <span className="hidden sm:inline"> Matches</span>
+                      </span>
+                      {totalMatches > 0 && totalMatches <= 1000 && (
+                        <>
+                          <div className="w-px h-4 bg-slate-200" />
+                          <button onClick={goToPrevMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={allMatches.length === 0}>&lt;</button>
+                          <span className="text-[10px] font-bold text-slate-400">{currentMatchIndex + 1} / {allMatches.length}</span>
+                          <button onClick={goToNextMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={allMatches.length === 0}>&gt;</button>
+                        </>
+                      )}
+                    </div>
+                    <button
+                      onClick={() => setIsContextMode(!isContextMode)}
+                      className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 active:scale-95 shadow-sm ${isContextMode ? 'bg-indigo-600 border-indigo-600 text-white' : 'bg-white border-indigo-100 text-indigo-600 hover:bg-indigo-50'}`}
+                    >
+                      {isContextMode ? 'Hide Rest' : 'Show Rest'}
+                    </button>
+                  </>
                 )}
               </div>
 
@@ -290,6 +413,8 @@ const App: React.FC = () => {
                     isExpandedOverride={globalExpanded}
                     forceExpand={targetExpandId === section.id}
                     isContextMode={isContextMode}
+                    currentMatch={currentMatch}
+                    totalMatches={totalMatches}
                   />
                 </div>
               ))}

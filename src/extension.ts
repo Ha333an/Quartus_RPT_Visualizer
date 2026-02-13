@@ -21,22 +21,34 @@ class QuartusRptEditorProvider implements vscode.CustomTextEditorProvider {
         webviewPanel.webview.options = { enableScripts: true };
         webviewPanel.webview.html = this.getHtmlForWebview(webviewPanel.webview, this.context.extensionUri);
 
-        const updateWebview = () => {
-            void webviewPanel.webview.postMessage({
-                command: 'setData',
-                data: document.getText()
+        const updateWebview = async () => {
+            await webviewPanel.webview.postMessage({
+                command: 'processing',
+                active: true
             });
+
+            try {
+                await webviewPanel.webview.postMessage({
+                    command: 'setData',
+                    data: document.getText()
+                });
+            } finally {
+                await webviewPanel.webview.postMessage({
+                    command: 'processing',
+                    active: false
+                });
+            }
         };
 
         const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument(event => {
             if (event.document.uri.toString() === document.uri.toString()) {
-                updateWebview();
+                void updateWebview();
             }
         });
 
         const messageSubscription = webviewPanel.webview.onDidReceiveMessage(message => {
             if (message?.command === 'ready') {
-                updateWebview();
+                void updateWebview();
             }
         });
 
@@ -45,7 +57,7 @@ class QuartusRptEditorProvider implements vscode.CustomTextEditorProvider {
             messageSubscription.dispose();
         });
 
-        updateWebview();
+        void updateWebview();
     }
 
     private getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {

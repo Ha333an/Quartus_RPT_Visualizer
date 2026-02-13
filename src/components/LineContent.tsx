@@ -4,9 +4,18 @@ import { MessageType, ReportLine } from '../types';
 interface LineContentProps {
   line: ReportLine;
   searchQuery?: string;
+  currentMatch: {
+    lineId: string;
+    start: number;
+  } | null;
 }
 
-const LineContent: React.FC<LineContentProps> = ({ line, searchQuery }) => {
+const LineContent: React.FC<LineContentProps> = ({ line, searchQuery, currentMatch }) => {
+  const lineNumber = (() => {
+    const rawIndex = Number(line.id.replace('line-', ''));
+    return Number.isFinite(rawIndex) ? rawIndex + 1 : null;
+  })();
+
   const getLineStyle = (type: MessageType) => {
     switch (type) {
       case MessageType.ERROR:
@@ -26,62 +35,94 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery }) => {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
-  const highlight = (text: string) => {
-    if (!searchQuery || !text.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return text;
+  const renderPart = (text: string, offset: number, isBold: boolean) => {
+    if (!searchQuery) {
+        return isBold ? <span className="font-bold">{text}</span> : <>{text}</>;
     }
 
-    try {
-      const escapedQuery = escapeRegExp(searchQuery);
-      const regex = new RegExp(`(${escapedQuery})`, 'gi');
-      const parts = text.split(regex);
-      
-      return parts.map((part, i) => 
-        part.toLowerCase() === searchQuery.toLowerCase() ? (
-          <mark key={i} className="bg-yellow-200 text-slate-900 rounded-sm px-0.5">
-            {part}
-          </mark>
-        ) : part
-      );
-    } catch (e) {
-      return text;
+    const result: React.ReactNode[] = [];
+    let lastIndex = 0;
+    const regex = new RegExp(escapeRegExp(searchQuery), 'gi');
+
+    for (const match of text.matchAll(regex)) {
+        const index = match.index!;
+        const before = text.substring(lastIndex, index);
+        if (before) result.push(before);
+        
+        const isCurrent = currentMatch && currentMatch.lineId === line.id && (offset + index) === currentMatch.start;
+
+        result.push(
+            <mark key={offset + index} className={isCurrent ? "bg-orange-500 text-white rounded-sm px-0.5" : "bg-yellow-200 text-slate-900 rounded-sm px-0.5"}>
+                {match[0]}
+            </mark>
+        );
+        lastIndex = index + match[0].length;
     }
+    const after = text.substring(lastIndex);
+    if (after) result.push(after);
+
+    if (result.length === 0) {
+      return isBold ? <span className="font-bold">{text}</span> : <>{text}</>;
+    }
+
+    return isBold ? <span className="font-bold">{result}</span> : <>{result}</>;
   };
   
   const renderContent = () => {
     const content = line.content;
-    const isSignalPathLike = content.includes(':');
 
-    if (isSignalPathLike) {
-      return content.split('|').map((part, index) => {
-        const subParts = part.split(':');
-        if (subParts.length > 1) {
-          const module = subParts[0];
-          const instance = subParts.slice(1).join(":");
-          return (
-            <React.Fragment key={index}>
-              {index > 0 && <span className="text-gray-400">|</span>}
-              <span className="font-bold">{highlight(module)}</span>
-              <span>:</span>
-              {highlight(instance)}
-            </React.Fragment>
-          );
-        }
-        return (
-          <React.Fragment key={index}>
-            {index > 0 && <span className="text-gray-400">|</span>}
-            {highlight(part)}
-          </React.Fragment>
+    const pattern = /([^:|]*):([^|]*)(\|?)/g;
+    const finalResult: React.ReactNode[] = [];
+    let cursor = 0;
+
+    for (const match of content.matchAll(pattern)) {
+      const matchIndex = match.index ?? 0;
+      const module = match[1];
+      const instance = match[2];
+      const hasPipe = match[3] === '|';
+
+      if (matchIndex > cursor) {
+        finalResult.push(renderPart(content.slice(cursor, matchIndex), cursor, false));
+      }
+
+      const moduleStart = matchIndex;
+      const colonStart = moduleStart + module.length;
+      const instanceStart = colonStart + 1;
+      const pipeStart = instanceStart + instance.length;
+
+      finalResult.push(renderPart(module, moduleStart, true));
+      finalResult.push(':');
+      finalResult.push(renderPart(instance, instanceStart, false));
+
+      if (hasPipe) {
+        finalResult.push(
+          <span key={`pipe-${pipeStart}`} className="text-gray-400">|</span>
         );
-      });
+      }
+
+      cursor = hasPipe ? pipeStart + 1 : pipeStart;
+    }
+
+    if (finalResult.length > 0) {
+      if (cursor < content.length) {
+        finalResult.push(renderPart(content.slice(cursor), cursor, false));
+      }
+      return finalResult;
     }
     
-    return highlight(content);
+    return renderPart(content, 0, false);
   };
 
   return (
-    <div className={`mono text-[11px] py-1 px-4 whitespace-pre border-b border-slate-50 last:border-0 ${getLineStyle(line.type)} hover:bg-slate-100 transition-colors`}>
-      {renderContent() || ' '}
+    <div className={`mono text-[11px] py-1 px-4 border-b border-slate-50 last:border-0 ${getLineStyle(line.type)} hover:bg-slate-100 transition-colors`}>
+      <div className="flex items-start gap-3">
+        <span className="w-12 text-right text-slate-400 select-none border-r border-slate-200 pr-2 shrink-0">
+          {lineNumber ?? ''}
+        </span>
+        <span className="whitespace-pre min-w-0 flex-1">
+          {renderContent() || ' '}
+        </span>
+      </div>
     </div>
   );
 };

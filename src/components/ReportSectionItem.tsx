@@ -10,6 +10,12 @@ interface ReportSectionItemProps {
   isExpandedOverride?: boolean;
   forceExpand?: boolean;
   isContextMode?: boolean;
+  totalMatches: number;
+  currentMatch: {
+    sectionId: string;
+    lineId: string;
+    start: number;
+  } | null;
 }
 
 type ContentBlock = {
@@ -18,7 +24,8 @@ type ContentBlock = {
 } | {
   type: 'table';
   id: string;
-  rows: string[][];
+  title?: string;
+  rows: { cells: string[]; lineId: string }[];
   rawLines: ReportLine[];
 };
 
@@ -27,7 +34,9 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
   searchQuery,
   isExpandedOverride,
   forceExpand,
-  isContextMode
+  isContextMode,
+  totalMatches,
+  currentMatch,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
 
@@ -66,7 +75,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
         
         // If we found a structure that looks like a table block
         if (tableLines.length > 1) {
-          const tableRows: string[][] = [];
+          const tableRows: { cells: string[]; lineId: string }[] = [];
           tableLines.forEach(tl => {
             const raw = tl.content.trim();
             if (raw.startsWith(';')) {
@@ -77,15 +86,24 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
                 if (idx === arr.length - 1 && raw.endsWith(';')) return false;
                 return true;
               });
-              if (cells.length > 0) tableRows.push(cells);
+              if (cells.length > 0) tableRows.push({ cells, lineId: tl.id });
             }
           });
 
           if (tableRows.length > 0) {
+            let tableTitle: string | undefined;
+            let tableDataRows = tableRows;
+
+            if (tableRows.length > 1 && tableRows[0].cells.length === 1) {
+              tableTitle = tableRows[0].cells[0];
+              tableDataRows = tableRows.slice(1);
+            }
+
             result.push({
               type: 'table',
               id: `table-${i}`,
-              rows: tableRows,
+              title: tableTitle,
+              rows: tableDataRows,
               rawLines: tableLines
             });
             i = j;
@@ -118,21 +136,86 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
   const hasSearchActive = searchQuery.length > 0;
 
   const renderTable = (block: Extract<ContentBlock, { type: 'table' }>) => {
-    const tableMatches = searchQuery ? block.rawLines.some(l => l.content.toLowerCase().includes(searchQuery.toLowerCase())) : true;
+    const effectiveSearchQuery = totalMatches > 1000 ? '' : searchQuery;
+    const tableMatches = effectiveSearchQuery ? block.rawLines.some(l => l.content.toLowerCase().includes(effectiveSearchQuery.toLowerCase())) : true;
     
-    if (!tableMatches && !isContextMode && searchQuery) return null;
+    if (!tableMatches && !isContextMode && effectiveSearchQuery) return null;
 
     const highlightText = (text: string) => {
-      if (!searchQuery) return text;
-      const parts = text.split(new RegExp(`(${searchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
+      if (!effectiveSearchQuery) return text;
+      const parts = text.split(new RegExp(`(${effectiveSearchQuery.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&')})`, 'gi'));
       return parts.map((part, i) => 
-        part.toLowerCase() === searchQuery.toLowerCase() ? 
+        part.toLowerCase() === effectiveSearchQuery.toLowerCase() ? 
           <mark key={i} className="bg-yellow-200 text-slate-900 rounded-sm px-0.5">{part}</mark> : part
       );
     };
 
+    const renderFormattedCell = (text: string) => {
+      const pattern = /([^:|]*):([^|]*)(\|?)/g;
+      const result: React.ReactNode[] = [];
+      let cursor = 0;
+      let keyIndex = 0;
+
+      for (const match of text.matchAll(pattern)) {
+        const matchIndex = match.index ?? 0;
+        const module = match[1];
+        const instance = match[2];
+        const hasPipe = match[3] === '|';
+
+        if (matchIndex > cursor) {
+          result.push(
+            <React.Fragment key={`cell-before-${keyIndex++}`}>
+              {highlightText(text.slice(cursor, matchIndex))}
+            </React.Fragment>
+          );
+        }
+
+        result.push(
+          <span key={`cell-module-${keyIndex++}`} className="font-bold">
+            {highlightText(module)}
+          </span>
+        );
+        result.push(
+          <React.Fragment key={`cell-colon-${keyIndex++}`}>:</React.Fragment>
+        );
+        result.push(
+          <React.Fragment key={`cell-instance-${keyIndex++}`}>
+            {highlightText(instance)}
+          </React.Fragment>
+        );
+
+        if (hasPipe) {
+          result.push(
+            <span key={`cell-pipe-${keyIndex++}`} className="text-gray-400">|</span>
+          );
+        }
+
+        const nextCursor = matchIndex + module.length + 1 + instance.length + (hasPipe ? 1 : 0);
+        cursor = nextCursor;
+      }
+
+      if (result.length === 0) {
+        return highlightText(text);
+      }
+
+      if (cursor < text.length) {
+        result.push(
+          <React.Fragment key={`cell-after-${keyIndex++}`}>
+            {highlightText(text.slice(cursor))}
+          </React.Fragment>
+        );
+      }
+
+      return result;
+    };
+
     return (
       <div className="flex flex-col items-start my-2 mx-2">
+        {block.title && (
+          <div className="mono text-[11px] font-black text-slate-700 mb-1 px-2">
+            {block.title}
+          </div>
+        )}
         <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm max-w-full">
           <table className="text-[11px] text-left border-collapse min-w-max bg-white">
             <tbody>
@@ -150,8 +233,8 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
                 }
 
                 return (
-                  <tr key={ridx} className={rowClasses.join(' ')}>
-                    {row.map((cell, cidx) => {
+                  <tr key={row.lineId} id={`line-${row.lineId}`} className={rowClasses.join(' ')}>
+                    {row.cells.map((cell, cidx) => {
                       const cellClasses = [
                         "px-4", "py-2", "mono", "border-r", 
                         "border-slate-50", "last:border-0", 
@@ -173,7 +256,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
 
                       return (
                         <td key={cidx} className={cellClasses.join(' ')}>
-                          {highlightText(cell)}
+                          {renderFormattedCell(cell)}
                         </td>
                       );
                     })}
@@ -217,8 +300,12 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
               if (!isMatch && !isContextMode && searchQuery) return null;
 
               return (
-                <div key={line.id} className={!isMatch && isContextMode ? 'scale-[0.99] origin-left transition-all' : ''}>
-                  <LineContent line={line} searchQuery={searchQuery} />
+                <div key={line.id} id={`line-${line.id}`} className={!isMatch && isContextMode ? 'scale-[0.99] origin-left transition-all' : ''}>
+                  <LineContent
+                    line={line}
+                    searchQuery={totalMatches > 1000 ? '' : searchQuery}
+                    currentMatch={currentMatch}
+                  />
                 </div>
               );
             })}

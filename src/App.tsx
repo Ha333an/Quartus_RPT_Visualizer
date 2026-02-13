@@ -7,7 +7,6 @@ import {
   FileText, 
   Search, 
   XCircle, 
-  Info,
   ChevronDown
 } from './components/Icons';
 
@@ -19,7 +18,6 @@ const App: React.FC = () => {
   const [isBackendProcessing, setIsBackendProcessing] = useState(Boolean(vscode));
   const [searchQuery, setSearchQuery] = useState('');
   const [rawSearchQuery, setRawSearchQuery] = useState('');
-  const [isHeaderExpanded, setIsHeaderExpanded] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -168,6 +166,39 @@ const App: React.FC = () => {
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
   const currentMatch = allMatches[currentMatchIndex];
 
+  const detectedReportTitle = useMemo(() => {
+    if (!reportData) return 'Quartus RPT';
+
+    const headerLines = reportData.headerInfo
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    const extractByKey = (keys: string[]) => {
+      for (const line of headerLines) {
+        const match = line.match(/^([^:]+):\s*(.+)$/);
+        if (!match) continue;
+
+        const key = match[1].trim().toLowerCase();
+        if (keys.some(k => key.includes(k))) {
+          return match[2].trim();
+        }
+      }
+      return '';
+    };
+
+    const reportName =
+      extractByKey(['report name', 'report file', 'project', 'revision', 'design']) ||
+      headerLines.find(line => !line.startsWith(';') && line.length > 4) ||
+      'Quartus RPT';
+
+    const reportDate =
+      extractByKey(['date', 'generated', 'time']) ||
+      headerLines.find(line => /\b\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\b|\b\d{4}-\d{2}-\d{2}\b/i.test(line)) ||
+      '';
+
+    return reportDate ? `${reportName} - ${reportDate}` : reportName;
+  }, [reportData]);
+
   const goToNextMatch = () => {
     if (allMatches.length === 0) return;
     setCurrentMatchIndex(i => (i + 1) % allMatches.length);
@@ -232,7 +263,7 @@ const App: React.FC = () => {
               <FileText className="w-6 h-6 text-white" />
             </div>
             <div>
-              <h1 className="text-xl font-black tracking-tight leading-none uppercase">Quartus RPT</h1>
+              <h1 className="text-xl font-black tracking-tight leading-none">{detectedReportTitle}</h1>
               <p className="text-[10px] text-blue-400 font-bold uppercase tracking-[0.15em] mt-1">
                 {vscode ? 'VS Code Extension' : 'Professional Visualizer'}
               </p>
@@ -387,23 +418,6 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="mb-8 bg-slate-900 rounded-3xl p-8 shadow-2xl overflow-hidden relative group">
-              <div className="flex items-center justify-between mb-6">
-                <div className="flex items-center gap-3 text-slate-400">
-                  <Info className="w-4 h-4" />
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em]">Build Metadata</span>
-                </div>
-                <button onClick={() => setIsHeaderExpanded(!isHeaderExpanded)} className="text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors">
-                  {isHeaderExpanded ? 'Hide Details' : 'Show Details'}
-                </button>
-              </div>
-              <div className={`transition-all duration-500 ease-in-out overflow-hidden ${isHeaderExpanded ? 'max-h-[800px] opacity-100' : 'max-h-12 opacity-80'}`}>
-                {reportData.headerInfo.map((line, i) => (
-                  <div key={i} className="font-mono text-[11px] text-slate-300 leading-relaxed mb-1 selection:bg-blue-500/30">{line}</div>
-                ))}
-              </div>
-            </div>
-
             <div className="space-y-4 pb-60">
               {reportData.sections.map((section) => (
                 <div key={section.id} id={section.id} className="scroll-mt-64">

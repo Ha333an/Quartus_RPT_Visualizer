@@ -132,19 +132,54 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
     };
 
     return (
-      <div className={`flex flex-col items-start my-2 mx-2 ${!tableMatches && isContextMode ? 'opacity-30' : ''}`}>
+      <div className="flex flex-col items-start my-2 mx-2">
         <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm max-w-full">
           <table className="text-[11px] text-left border-collapse min-w-max bg-white">
             <tbody>
-              {block.rows.map((row, ridx) => (
-                <tr key={ridx} className={`${ridx === 0 ? 'bg-slate-50 font-black border-b border-slate-200' : 'border-b border-slate-50 last:border-0'} hover:bg-slate-100 transition-colors`}>
-                  {row.map((cell, cidx) => (
-                    <td key={cidx} className="px-4 py-2 mono border-r border-slate-50 last:border-0 leading-tight whitespace-nowrap">
-                      {highlightText(cell)}
-                    </td>
-                  ))}
-                </tr>
-              ))}
+              {block.rows.map((row, ridx) => {
+                const rowClasses = ["last:border-0", "hover:bg-slate-100", "transition-colors"];
+                if (ridx === 0) {
+                  rowClasses.push("bg-slate-50", "font-black", "border-b", "border-slate-200");
+                } else {
+                  rowClasses.push("border-b", "border-slate-50");
+                  if (ridx % 2 !== 0) {
+                    rowClasses.push("bg-slate-50");
+                  } else {
+                    rowClasses.push("bg-white");
+                  }
+                }
+
+                return (
+                  <tr key={ridx} className={rowClasses.join(' ')}>
+                    {row.map((cell, cidx) => {
+                      const cellClasses = [
+                        "px-4", "py-2", "mono", "border-r", 
+                        "border-slate-50", "last:border-0", 
+                        "leading-tight", "whitespace-nowrap"
+                      ];
+                      
+                      if (cidx === 0) {
+                        cellClasses.push("sticky", "left-0");
+                        if (ridx === 0) {
+                          cellClasses.push("bg-slate-50");
+                        } else {
+                          if (ridx % 2 !== 0) {
+                            cellClasses.push("bg-slate-50");
+                          } else {
+                            cellClasses.push("bg-white");
+                          }
+                        }
+                      }
+
+                      return (
+                        <td key={cidx} className={cellClasses.join(' ')}>
+                          {highlightText(cell)}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -182,7 +217,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
               if (!isMatch && !isContextMode && searchQuery) return null;
 
               return (
-                <div key={line.id} className={!isMatch && isContextMode ? 'opacity-30 grayscale-[0.5] scale-[0.99] origin-left transition-all' : ''}>
+                <div key={line.id} className={!isMatch && isContextMode ? 'scale-[0.99] origin-left transition-all' : ''}>
                   <LineContent line={line} searchQuery={searchQuery} />
                 </div>
               );

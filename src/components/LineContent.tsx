@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { MessageType, ReportLine } from '../types';
 
@@ -19,7 +18,7 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery }) => {
       case MessageType.INFO:
         return 'bg-blue-50 text-blue-700 border-l-4 border-blue-400 font-medium';
       default:
-        return 'text-slate-600 border-l-4 border-transparent opacity-80';
+        return 'text-black border-l-4 border-transparent';
     }
   };
 
@@ -27,16 +26,15 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery }) => {
     return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   };
 
-  const renderContent = () => {
-    if (!searchQuery || !line.content.toLowerCase().includes(searchQuery.toLowerCase())) {
-      return line.content;
+  const highlight = (text: string) => {
+    if (!searchQuery || !text.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return text;
     }
 
     try {
       const escapedQuery = escapeRegExp(searchQuery);
-      // Split by the search query but keep the matches using a capturing group for highlighting
       const regex = new RegExp(`(${escapedQuery})`, 'gi');
-      const parts = line.content.split(regex);
+      const parts = text.split(regex);
       
       return parts.map((part, i) => 
         part.toLowerCase() === searchQuery.toLowerCase() ? (
@@ -46,9 +44,39 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery }) => {
         ) : part
       );
     } catch (e) {
-      // Fallback for extreme cases where regex might still fail
-      return line.content;
+      return text;
     }
+  };
+  
+  const renderContent = () => {
+    const content = line.content;
+    const isSignalPathLike = content.includes(':');
+
+    if (isSignalPathLike) {
+      return content.split('|').map((part, index) => {
+        const subParts = part.split(':');
+        if (subParts.length > 1) {
+          const module = subParts[0];
+          const instance = subParts.slice(1).join(":");
+          return (
+            <React.Fragment key={index}>
+              {index > 0 && <span className="text-gray-400">|</span>}
+              <span className="font-bold">{highlight(module)}</span>
+              <span>:</span>
+              {highlight(instance)}
+            </React.Fragment>
+          );
+        }
+        return (
+          <React.Fragment key={index}>
+            {index > 0 && <span className="text-gray-400">|</span>}
+            {highlight(part)}
+          </React.Fragment>
+        );
+      });
+    }
+    
+    return highlight(content);
   };
 
   return (

@@ -1,8 +1,9 @@
 
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { MessageType, ReportData } from './types';
+import { MessageType, ReportData, ReportLine } from './types';
 import { parseRptFile } from './utils/parser';
 import ReportSectionItem from './components/ReportSectionItem';
+import LineContent from './components/LineContent';
 import { 
   FileText, 
   Search, 
@@ -15,9 +16,11 @@ const vscode = (window as any).vscode;
 
 const App: React.FC = () => {
   const [reportData, setReportData] = useState<ReportData | null>(null);
+  const [rawContent, setRawContent] = useState('');
   const [isBackendProcessing, setIsBackendProcessing] = useState(Boolean(vscode));
   const [searchQuery, setSearchQuery] = useState('');
   const [rawSearchQuery, setRawSearchQuery] = useState('');
+  const [isRawMode, setIsRawMode] = useState(false);
 
   useEffect(() => {
     const timer = setTimeout(() => {
@@ -40,8 +43,10 @@ const App: React.FC = () => {
           setIsBackendProcessing(Boolean(message.active));
           break;
         case 'setData':
-          const parsed = parseRptFile(message.data);
+          const incomingContent = typeof message.data === 'string' ? message.data : '';
+          const parsed = parseRptFile(incomingContent);
           setReportData(parsed);
+          setRawContent(incomingContent);
           if (!vscode) setIsBackendProcessing(false);
           break;
         case 'setSearch':
@@ -79,6 +84,7 @@ const App: React.FC = () => {
         const text = e.target?.result as string;
         const parsed = parseRptFile(text);
         setReportData(parsed);
+        setRawContent(text);
         setGlobalExpanded(false);
         setRawSearchQuery('');
         setTargetExpandId(null);
@@ -108,6 +114,26 @@ const App: React.FC = () => {
     setGlobalExpanded(undefined);
     setIsContextMode(false);
   };
+
+  const getMessageTypeFromLine = (line: string): MessageType => {
+    const trimmed = line.trim();
+    if (trimmed.startsWith('Info')) return MessageType.INFO;
+    if (trimmed.startsWith('Critical Warning')) return MessageType.CRITICAL_WARNING;
+    if (trimmed.startsWith('Warning')) return MessageType.WARNING;
+    if (trimmed.startsWith('Error')) return MessageType.ERROR;
+    return MessageType.PLAIN;
+  };
+
+  const rawLines = useMemo<ReportLine[]>(() => {
+    if (!rawContent) return [];
+
+    return rawContent.split(/\r?\n/).map((line, index) => ({
+      id: `raw-${index}`,
+      type: getMessageTypeFromLine(line),
+      content: line,
+      raw: line,
+    }));
+  }, [rawContent]);
 
   const messageCounts = useMemo(() => {
     if (!reportData) return { info: 0, warn: 0, critical: 0, error: 0 };
@@ -143,6 +169,20 @@ const App: React.FC = () => {
     return count;
   }, [reportData, searchQuery]);
 
+  const rawTotalMatches = useMemo(() => {
+    if (!searchQuery || rawLines.length === 0) return 0;
+    let count = 0;
+    const regex = new RegExp(escapeRegExp(searchQuery), 'gi');
+    for (const line of rawLines) {
+      const matches = line.content.match(regex);
+      if (matches) {
+        count += matches.length;
+      }
+      if (count > 1000) return 1001;
+    }
+    return count;
+  }, [rawLines, searchQuery]);
+
   const allMatches = useMemo(() => {
     if (!searchQuery || !reportData || totalMatches > 1000) return [];
     
@@ -163,8 +203,45 @@ const App: React.FC = () => {
     return matches;
   }, [reportData, searchQuery, totalMatches]);
 
+  const rawMatches = useMemo(() => {
+    if (!searchQuery || rawLines.length === 0 || rawTotalMatches > 1000) return [];
+
+    const matches = [];
+    const regex = new RegExp(escapeRegExp(searchQuery), 'gi');
+    for (const line of rawLines) {
+      for (const match of line.content.matchAll(regex)) {
+        matches.push({
+          lineId: line.id,
+          start: match.index,
+        });
+      }
+    }
+
+    return matches;
+  }, [rawLines, searchQuery, rawTotalMatches]);
+
   const [currentMatchIndex, setCurrentMatchIndex] = useState(-1);
-  const currentMatch = allMatches[currentMatchIndex];
+  const activeMatches = isRawMode ? rawMatches : allMatches;
+  const activeTotalMatches = isRawMode ? rawTotalMatches : totalMatches;
+  const currentStructuredMatch = allMatches[currentMatchIndex];
+  const currentRawMatch = rawMatches[currentMatchIndex];
+  const currentMatch = isRawMode ? currentRawMatch : currentStructuredMatch;
+
+  useEffect(() => {
+    if (!searchQuery) {
+      setCurrentMatchIndex(-1);
+      return;
+    }
+
+    if (activeMatches.length === 0) {
+      setCurrentMatchIndex(-1);
+      return;
+    }
+
+    if (currentMatchIndex < 0 || currentMatchIndex >= activeMatches.length) {
+      setCurrentMatchIndex(0);
+    }
+  }, [searchQuery, isRawMode, activeMatches.length, currentMatchIndex]);
 
   const detectedReportTitle = useMemo(() => {
     if (!reportData) return 'Quartus RPT';
@@ -200,24 +277,47 @@ const App: React.FC = () => {
   }, [reportData]);
 
   const goToNextMatch = () => {
-    if (allMatches.length === 0) return;
-    setCurrentMatchIndex(i => (i + 1) % allMatches.length);
+    if (activeMatches.length === 0) return;
+    setCurrentMatchIndex(i => (i + 1) % activeMatches.length);
   };
 
   const goToPrevMatch = () => {
-    if (allMatches.length === 0) return;
-    setCurrentMatchIndex(i => (i - 1 + allMatches.length) % allMatches.length);
+    if (activeMatches.length === 0) return;
+    setCurrentMatchIndex(i => (i - 1 + activeMatches.length) % activeMatches.length);
   };
 
   useEffect(() => {
-    if (currentMatch) {
-      setTargetExpandId(currentMatch.sectionId);
+    if (isRawMode) {
+      if (currentRawMatch) {
+        let attempts = 0;
+        const maxAttempts = 8;
+
+        const tryScrollToRawMatch = () => {
+          const el = document.getElementById(`line-${currentRawMatch.lineId}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            return;
+          }
+
+          attempts += 1;
+          if (attempts < maxAttempts) {
+            setTimeout(tryScrollToRawMatch, 80);
+          }
+        };
+
+        setTimeout(tryScrollToRawMatch, 60);
+      }
+      return;
+    }
+
+    if (currentStructuredMatch) {
+      setTargetExpandId(currentStructuredMatch.sectionId);
 
       let attempts = 0;
       const maxAttempts = 8;
 
       const tryScrollToMatch = () => {
-        const el = document.getElementById(`line-${currentMatch.lineId}`);
+        const el = document.getElementById(`line-${currentStructuredMatch.lineId}`);
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
           return;
@@ -229,7 +329,7 @@ const App: React.FC = () => {
           return;
         }
 
-        const sectionEl = document.getElementById(currentMatch.sectionId);
+        const sectionEl = document.getElementById(currentStructuredMatch.sectionId);
         if (sectionEl) {
           sectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
         }
@@ -237,7 +337,7 @@ const App: React.FC = () => {
 
       setTimeout(tryScrollToMatch, 60);
     }
-  }, [currentMatch]);
+  }, [currentRawMatch, currentStructuredMatch, isRawMode]);
 
   const jumpToSection = (sectionId: string) => {
     setRawSearchQuery(''); 
@@ -316,6 +416,7 @@ const App: React.FC = () => {
                 )}
               </div>
 
+              {!isRawMode && (
               <div className="relative" ref={menuRef}>
                 <button 
                   onClick={() => setIsMenuOpen(!isMenuOpen)}
@@ -339,6 +440,7 @@ const App: React.FC = () => {
                   </div>
                 )}
               </div>
+              )}
             </div>
 
             <div className="flex flex-wrap items-center justify-between gap-4">
@@ -362,15 +464,15 @@ const App: React.FC = () => {
                   <>
                     <div className="flex items-center gap-3 border-2 border-slate-200 rounded-xl px-3 py-2">
                       <span className="text-[10px] font-black uppercase tracking-widest text-slate-500">
-                        {totalMatches > 1000 ? '>1k' : totalMatches}
+                        {activeTotalMatches > 1000 ? '>1k' : activeTotalMatches}
                         <span className="hidden sm:inline"> Matches</span>
                       </span>
-                      {totalMatches > 0 && totalMatches <= 1000 && (
+                      {activeTotalMatches > 0 && activeTotalMatches <= 1000 && (
                         <>
                           <div className="w-px h-4 bg-slate-200" />
-                          <button onClick={goToPrevMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={allMatches.length === 0}>&lt;</button>
-                          <span className="text-[10px] font-bold text-slate-400">{currentMatchIndex + 1} / {allMatches.length}</span>
-                          <button onClick={goToNextMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={allMatches.length === 0}>&gt;</button>
+                          <button onClick={goToPrevMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={activeMatches.length === 0}>&lt;</button>
+                          <span className="text-[10px] font-bold text-slate-400">{currentMatchIndex + 1} / {activeMatches.length}</span>
+                          <button onClick={goToNextMatch} className="text-slate-500 hover:text-blue-600 transition-colors p-1 rounded-md disabled:opacity-30 disabled:hover:text-slate-500" disabled={activeMatches.length === 0}>&gt;</button>
                         </>
                       )}
                     </div>
@@ -384,10 +486,21 @@ const App: React.FC = () => {
                 )}
               </div>
 
-              <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl">
-                <button onClick={() => setGlobalExpanded(true)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-900 transition-colors">Expand All</button>
-                <div className="w-px h-4 bg-slate-200" />
-                <button onClick={() => setGlobalExpanded(false)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-900 transition-colors">Collapse All</button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setIsRawMode(!isRawMode)}
+                  className={`px-4 py-2.5 rounded-xl border-2 text-[10px] font-black uppercase tracking-widest transition-all active:scale-95 ${isRawMode ? 'bg-violet-600 border-violet-600 text-white' : 'bg-white border-violet-100 text-violet-600 hover:bg-violet-50'}`}
+                >
+                  {isRawMode ? 'Structured Mode' : 'Raw Mode'}
+                </button>
+
+                {!isRawMode && (
+                  <div className="flex items-center gap-2 bg-slate-100 p-1.5 rounded-xl">
+                    <button onClick={() => setGlobalExpanded(true)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-900 transition-colors">Expand All</button>
+                    <div className="w-px h-4 bg-slate-200" />
+                    <button onClick={() => setGlobalExpanded(false)} className="px-4 py-2 text-[10px] font-black uppercase tracking-widest text-slate-600 hover:text-slate-900 transition-colors">Collapse All</button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -418,21 +531,47 @@ const App: React.FC = () => {
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-4">
-              {reportData.sections.map((section) => (
-                <div key={section.id} id={section.id} className="scroll-mt-64">
-                  <ReportSectionItem 
-                    section={section} 
-                    searchQuery={searchQuery}
-                    isExpandedOverride={globalExpanded}
-                    forceExpand={targetExpandId === section.id}
-                    isContextMode={isContextMode}
-                    currentMatch={currentMatch}
-                    totalMatches={totalMatches}
-                  />
+            {isRawMode ? (
+              <div className="border border-slate-200 rounded-[1.25rem] bg-white shadow-sm overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+                  <h3 className="text-xs font-black uppercase tracking-widest text-slate-600">Raw Input</h3>
+                  <span className="text-[10px] font-bold text-slate-500">{rawLines.length} lines</span>
                 </div>
-              ))}
-            </div>
+                <div className="py-2">
+                  {rawLines.map((line) => {
+                    const isMatch = !searchQuery || line.content.toLowerCase().includes(searchQuery.toLowerCase());
+                    if (!isMatch && !isContextMode && searchQuery) return null;
+
+                    return (
+                      <div key={line.id} id={`line-${line.id}`} className={!isMatch && isContextMode ? 'scale-[0.99] origin-left transition-all' : ''}>
+                        <LineContent
+                          line={line}
+                          searchQuery={activeTotalMatches > 1000 ? '' : searchQuery}
+                          enableColonPipeFormatting={false}
+                          currentMatch={currentRawMatch || null}
+                        />
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                {reportData.sections.map((section) => (
+                  <div key={section.id} id={section.id} className="scroll-mt-64">
+                    <ReportSectionItem 
+                      section={section} 
+                      searchQuery={searchQuery}
+                      isExpandedOverride={globalExpanded}
+                      forceExpand={targetExpandId === section.id}
+                      isContextMode={isContextMode}
+                      currentMatch={currentStructuredMatch}
+                      totalMatches={totalMatches}
+                    />
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </main>

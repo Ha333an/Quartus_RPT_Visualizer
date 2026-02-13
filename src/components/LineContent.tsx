@@ -4,15 +4,17 @@ import { MessageType, ReportLine } from '../types';
 interface LineContentProps {
   line: ReportLine;
   searchQuery?: string;
+  enableColonPipeFormatting?: boolean;
   currentMatch: {
     lineId: string;
     start: number;
   } | null;
 }
 
-const LineContent: React.FC<LineContentProps> = ({ line, searchQuery, currentMatch }) => {
+const LineContent: React.FC<LineContentProps> = ({ line, searchQuery, currentMatch, enableColonPipeFormatting = true }) => {
   const lineNumber = (() => {
-    const rawIndex = Number(line.id.replace('line-', ''));
+    const numericSuffix = line.id.match(/(\d+)$/)?.[1];
+    const rawIndex = Number(numericSuffix);
     return Number.isFinite(rawIndex) ? rawIndex + 1 : null;
   })();
 
@@ -70,6 +72,10 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery, currentMat
   
   const renderContent = () => {
     const content = line.content;
+
+    if (!enableColonPipeFormatting) {
+      return renderPart(content, 0, false);
+    }
 
     const pattern = /([^:|]*):([^|]*)(\|?)/g;
     const finalResult: React.ReactNode[] = [];

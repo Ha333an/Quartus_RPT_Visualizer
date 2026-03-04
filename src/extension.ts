@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 export function activate(context: vscode.ExtensionContext): void {
     context.subscriptions.push(QuartusRptEditorProvider.register(context));
@@ -46,9 +47,48 @@ class QuartusRptEditorProvider implements vscode.CustomTextEditorProvider {
             }
         });
 
+        const openFileAtLocation = async (filePath: string, line: number) => {
+            try {
+                const targetLine = Number.isFinite(line) && line > 0 ? line : 1;
+                const cleanedPath = String(filePath ?? '').trim().replace(/^['"]|['"]$/g, '');
+                if (!cleanedPath) {
+                    return;
+                }
+
+                let fileUri: vscode.Uri;
+                if (cleanedPath.startsWith('file://')) {
+                    fileUri = vscode.Uri.parse(cleanedPath);
+                } else {
+                    const isAbsolutePath = /^[A-Za-z]:[\\/]/.test(cleanedPath) || cleanedPath.startsWith('/') || path.isAbsolute(cleanedPath);
+                    const resolvedPath = isAbsolutePath
+                        ? cleanedPath
+                        : path.resolve(path.dirname(document.uri.fsPath), cleanedPath);
+                    fileUri = vscode.Uri.file(resolvedPath);
+                }
+
+                const targetDocument = await vscode.workspace.openTextDocument(fileUri);
+                const editor = await vscode.window.showTextDocument(targetDocument, {
+                    viewColumn: webviewPanel.viewColumn,
+                    preview: false,
+                    preserveFocus: false,
+                });
+                const position = new vscode.Position(targetLine - 1, 0);
+                editor.selection = new vscode.Selection(position, position);
+                editor.revealRange(new vscode.Range(position, position), vscode.TextEditorRevealType.InCenter);
+            } catch {
+                void vscode.window.showWarningMessage(`Unable to open file: ${filePath}`);
+            }
+        };
+
         const messageSubscription = webviewPanel.webview.onDidReceiveMessage(message => {
             if (message?.command === 'ready') {
                 void updateWebview();
+                return;
+            }
+
+            if (message?.command === 'openFileAtLocation' && typeof message.filePath === 'string') {
+                const line = Number.parseInt(String(message.line ?? '1'), 10);
+                void openFileAtLocation(message.filePath, Number.isFinite(line) ? line : 1);
             }
         });
 

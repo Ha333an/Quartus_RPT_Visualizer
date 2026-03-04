@@ -1,0 +1,8 @@
+{
+  "tool_permissions": {
+    "run_shell_command": "allow",
+    "write_file": "allow",
+    "read_file": "allow",
+    "replace": "allow"
+  }
+}

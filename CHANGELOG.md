@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.9] - 2026-03-04
+
+### Fixed
+- Windows drive-letter paths (for example `D:/...`) are no longer misparsed as module labels, preventing incorrect bolding of `D:`.
+- Clickable file-path detection now preserves full drive-prefixed paths so file open works reliably.
+- Custom editor state is retained when switching between files, preventing unnecessary re-open/reload behavior on return.
+
 ## [1.0.8] - 2026-03-04
 
 ### Fixed

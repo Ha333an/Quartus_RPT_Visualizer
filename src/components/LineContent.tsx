@@ -256,7 +256,7 @@ const LineContent: React.FC<LineContentProps> = ({ line, searchQuery, currentMat
       return renderPart(content, 0, false);
     }
 
-    const pattern = /([A-Za-z_][A-Za-z0-9_]*):([^|]*)(\|?)/g;
+    const pattern = /([A-Za-z_][A-Za-z0-9_]*):(?![\\/])([^|]*)(\|?)/g;
     const finalResult: React.ReactNode[] = [];
     let cursor = 0;
 

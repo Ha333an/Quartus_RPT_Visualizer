@@ -10,7 +10,11 @@ class QuartusRptEditorProvider implements vscode.CustomTextEditorProvider {
 
     public static register(context: vscode.ExtensionContext): vscode.Disposable {
         const provider = new QuartusRptEditorProvider(context);
-        return vscode.window.registerCustomEditorProvider(QuartusRptEditorProvider.viewType, provider);
+        return vscode.window.registerCustomEditorProvider(QuartusRptEditorProvider.viewType, provider, {
+            webviewOptions: {
+                retainContextWhenHidden: true,
+            },
+        });
     }
 
     constructor(private readonly context: vscode.ExtensionContext) {}
@@ -97,7 +101,6 @@ class QuartusRptEditorProvider implements vscode.CustomTextEditorProvider {
             messageSubscription.dispose();
         });
 
-        void updateWebview();
     }
 
     private getHtmlForWebview(webview: vscode.Webview, extensionUri: vscode.Uri): string {

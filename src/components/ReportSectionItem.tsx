@@ -151,7 +151,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
     };
 
     const renderFormattedCell = (text: string) => {
-      const pattern = /([^:|]*):([^|]*)(\|?)/g;
+      const pattern = /([A-Za-z_][A-Za-z0-9_]*):(?![\\/])([^|]*)(\|?)/g;
       const result: React.ReactNode[] = [];
       let cursor = 0;
       let keyIndex = 0;

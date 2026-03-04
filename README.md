@@ -17,6 +17,7 @@ Quartus RPT Visualizer is a custom editor extension for Intel Quartus `.rpt` fil
 	- Filesystem-style paths (`C:/...`, `/...`, `./...`, `../...`)
 - Smart non-link filtering for hierarchy-like text (for example paths containing `|`)
 - File links open in the same VS Code editor group and jump to the target line
+- Improved table readability with explicit non-gray table text styling
 
 ## Usage
 

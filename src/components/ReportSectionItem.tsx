@@ -217,7 +217,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
           </div>
         )}
         <div className="overflow-x-auto rounded-xl border border-slate-200 shadow-sm max-w-full">
-          <table className="text-[11px] text-left border-collapse min-w-max bg-white">
+          <table className="text-[11px] text-left text-black border-collapse min-w-max bg-white">
             <tbody>
               {block.rows.map((row, ridx) => {
                 const rowClasses = ["last:border-0", "hover:bg-slate-100", "transition-colors"];
@@ -238,7 +238,7 @@ const ReportSectionItem: React.FC<ReportSectionItemProps> = ({
                       const cellClasses = [
                         "px-4", "py-2", "mono", "border-r", 
                         "border-slate-50", "last:border-0", 
-                        "leading-tight", "whitespace-nowrap"
+                        "leading-tight", "whitespace-nowrap", "text-black"
                       ];
                       
                       if (cidx === 0) {
